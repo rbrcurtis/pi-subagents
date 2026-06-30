@@ -394,22 +394,22 @@ describe("ConversationViewer", () => {
       return { viewer, tui, onSteer };
     }
 
-    it("offers the steer affordance for a running agent and opens on 'i'", () => {
+    it("offers the steer affordance for a running agent and opens on Enter", () => {
       const { viewer } = makeViewer();
-      expect(viewer.render(W).join("\n")).toContain("i steer");
+      expect(viewer.render(W).join("\n")).toContain("Enter steer");
 
-      viewer.handleInput("i");
+      viewer.handleInput("\r"); // Enter
       // Composer is shown (its prompt + send/cancel hint), idle footer is gone.
       const out = viewer.render(W).join("\n");
       expect(out).toContain("Enter send · Esc cancel");
-      expect(out).not.toContain("i steer");
+      expect(out).not.toContain("Enter steer");
     });
 
     it("typing then Enter sends the trimmed message and closes the composer", () => {
       const { viewer, onSteer } = makeViewer();
-      viewer.handleInput("i");
+      viewer.handleInput("\r"); // open composer
       for (const ch of "  hello  ") viewer.handleInput(ch);
-      viewer.handleInput("\r"); // Enter
+      viewer.handleInput("\r"); // send
 
       expect(onSteer).toHaveBeenCalledWith("hello");
       expect(viewer.render(W).join("\n")).not.toContain("Enter send"); // composer closed
@@ -417,7 +417,7 @@ describe("ConversationViewer", () => {
 
     it("Esc cancels the composer without sending", () => {
       const { viewer, onSteer } = makeViewer();
-      viewer.handleInput("i");
+      viewer.handleInput("\r"); // open composer
       for (const ch of "draft") viewer.handleInput(ch);
       viewer.handleInput("\x1b"); // Esc
 
@@ -425,16 +425,17 @@ describe("ConversationViewer", () => {
       expect(viewer.render(W).join("\n")).not.toContain("Enter send");
     });
 
-    it("submitting an empty message does not call onSteer", () => {
+    it("an empty submit just returns (like Esc), without calling onSteer", () => {
       const { viewer, onSteer } = makeViewer();
-      viewer.handleInput("i");
-      viewer.handleInput("\r");
+      viewer.handleInput("\r"); // open composer
+      viewer.handleInput("\r"); // empty submit
       expect(onSteer).not.toHaveBeenCalled();
+      expect(viewer.render(W).join("\n")).not.toContain("Enter send"); // composer closed
     });
 
     it("scroll keys are inert while composing (input owns them)", () => {
       const { viewer } = makeViewer();
-      viewer.handleInput("i");
+      viewer.handleInput("\r"); // open composer
       // 'j' would normally scroll, but here it types into the composer.
       viewer.handleInput("j");
       expect(viewer.render(W).join("\n")).toContain("Enter send · Esc cancel");
@@ -442,8 +443,8 @@ describe("ConversationViewer", () => {
 
     it("no steer affordance once the agent is no longer running", () => {
       const { viewer, onSteer } = makeViewer({ status: "completed" });
-      expect(viewer.render(W).join("\n")).not.toContain("i steer");
-      viewer.handleInput("i");
+      expect(viewer.render(W).join("\n")).not.toContain("Enter steer");
+      viewer.handleInput("\r");
       expect(viewer.render(W).join("\n")).not.toContain("Enter send");
       expect(onSteer).not.toHaveBeenCalled();
     });
@@ -452,8 +453,8 @@ describe("ConversationViewer", () => {
       const viewer = new ConversationViewer(
         mockTui(30, W), mockSession(), mockRecord({ status: "running" }), undefined, ansiTheme(), vi.fn(),
       );
-      expect(viewer.render(W).join("\n")).not.toContain("i steer");
-      expect(() => viewer.handleInput("i")).not.toThrow();
+      expect(viewer.render(W).join("\n")).not.toContain("Enter steer");
+      expect(() => viewer.handleInput("\r")).not.toThrow();
     });
 
     it("composer rows never exceed width", () => {
@@ -463,7 +464,7 @@ describe("ConversationViewer", () => {
           tui, mockSession(), mockRecord({ status: "running" }),
           undefined, ansiTheme(), vi.fn(), undefined, undefined, vi.fn(),
         );
-        viewer.handleInput("i");
+        viewer.handleInput("\r"); // open composer
         for (const ch of "x".repeat(200)) viewer.handleInput(ch);
         assertAllLinesFit(viewer.render(w), w);
       }

@@ -68,9 +68,10 @@ export class ConversationViewer implements Component {
       return;
     }
 
-    // Open the steering composer (only while the agent can still be steered).
-    // When not steerable, fall through so the key still disarms a pending stop.
-    if (matchesKey(data, "i") && this.canSteer()) {
+    // Enter opens the steering composer (only while the agent can still be
+    // steered) — then type + Enter sends, Esc or an empty submit returns. When
+    // not steerable, fall through so the key still disarms a pending stop.
+    if (matchesKey(data, "enter") && this.canSteer()) {
       this.stopArmed = false;
       this.openComposer();
       return;
@@ -190,20 +191,16 @@ export class ConversationViewer implements Component {
       const composeGap = Math.max(1, innerW - visibleWidth(composeLeft) - visibleWidth(composeHint));
       lines.push(row(composeLeft + " ".repeat(composeGap) + composeHint));
     } else {
-      const scrollPct = contentLines.length <= viewportHeight
-        ? "100%"
-        : `${Math.round(((visibleStart + viewportHeight) / contentLines.length) * 100)}%`;
-      const footerLeft = th.fg("dim", `${contentLines.length} lines · ${scrollPct}`);
-      const scrollHint = th.fg("dim", "↑↓ scroll · Esc close");
-      // Stop/steer hints go first in the right group so they survive right-edge
-      // truncation on narrow terminals (the scroll hint is the expendable part).
-      const rightParts: string[] = [];
-      if (this.canSteer()) rightParts.push(th.fg("dim", "i steer"));
+      // Actions on the left, navigation on the right. The scroll hint keeps its
+      // full key list so the less-obvious bindings stay discoverable; it leads
+      // the right group so "Esc close" is the only part that truncates first.
+      const actions: string[] = [];
+      if (this.canSteer()) actions.push(th.fg("dim", "Enter steer"));
       if (this.isStoppable()) {
-        rightParts.push(this.stopArmed ? th.fg("error", "x again to STOP") : th.fg("dim", "x stop"));
+        actions.push(this.stopArmed ? th.fg("error", "x again to STOP") : th.fg("dim", "x stop"));
       }
-      rightParts.push(scrollHint);
-      const footerRight = rightParts.join(th.fg("dim", " · "));
+      const footerLeft = actions.join(th.fg("dim", " · "));
+      const footerRight = th.fg("dim", "↑↓ scroll · PgUp/PgDn or Shift+↑↓ · Esc close");
       const footerGap = Math.max(1, innerW - visibleWidth(footerLeft) - visibleWidth(footerRight));
       lines.push(row(footerLeft + " ".repeat(footerGap) + footerRight));
     }

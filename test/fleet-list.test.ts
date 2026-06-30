@@ -343,7 +343,7 @@ describe("FleetList overlay lifecycle", () => {
 
     const viewer = h.overlayComponent();
     expect(viewer).toBeDefined();
-    viewer!.handleInput("i");                       // open composer
+    viewer!.handleInput("\r");                       // Enter → open composer
     for (const ch of "go left") viewer!.handleInput(ch);
     viewer!.handleInput("\r");                       // Enter → send
 
