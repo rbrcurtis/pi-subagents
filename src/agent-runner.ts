@@ -35,6 +35,7 @@ export const SUBAGENT_TOOL_NAMES = {
   AGENT: "Agent",
   GET_RESULT: "get_subagent_result",
   STEER: "steer_subagent",
+  SCHEDULE: "manage_scheduled_jobs",
 } as const;
 
 /** Names of tools registered by this extension that subagents must NOT inherit. */

@@ -1097,7 +1097,7 @@ Terse command-style prompts produce shallow, generic work.
           return textResult(
             `Scheduled "${job.name}" (id: ${job.id}, type: ${job.scheduleType}). ` +
             `Next run: ${next ?? "(unknown)"}. ` +
-            `Manage via /agents → Scheduled jobs.`,
+            `Manage via the ${SUBAGENT_TOOL_NAMES.SCHEDULE} tool or /agents → Scheduled jobs.`,
           );
         } catch (err) {
           return textResult(err instanceof Error ? err.message : String(err));
@@ -1459,6 +1459,72 @@ Terse command-style prompts produce shallow, generic work.
       } catch (err) {
         return textResult(`Failed to steer agent: ${err instanceof Error ? err.message : String(err)}`);
       }
+    },
+  }));
+
+  // ---- manage_scheduled_jobs tool ----
+  // LLM-callable counterpart of /agents → Scheduled jobs, so agents (especially
+  // headless SDK sessions with no TUI) can clean up their own schedules instead
+  // of asking a human. Registered only when scheduling is enabled at init,
+  // mirroring the Agent tool's `schedule` param gating.
+
+  if (isSchedulingEnabled()) pi.registerTool(defineTool({
+    name: SUBAGENT_TOOL_NAMES.SCHEDULE,
+    label: "Manage Scheduled Jobs",
+    description:
+      "List, cancel, pause, or resume scheduled subagent jobs in this session. " +
+      "Use the job ID returned when the job was scheduled, or from action: \"list\".",
+    promptSnippet: "List, cancel, pause, or resume scheduled subagent jobs",
+    parameters: Type.Object({
+      action: Type.Union([
+        Type.Literal("list"),
+        Type.Literal("cancel"),
+        Type.Literal("pause"),
+        Type.Literal("resume"),
+      ], {
+        description: "list: show all jobs. cancel: permanently delete a job. pause/resume: disable/re-enable a job without deleting it.",
+      }),
+      job_id: Type.Optional(
+        Type.String({ description: "Job ID (required for cancel/pause/resume)." }),
+      ),
+    }),
+    execute: async (_toolCallId, params, _signal, _onUpdate, _ctx) => {
+      if (!scheduler.isActive()) {
+        return textResult("Scheduler is not active in this session yet. Try again after the session has fully started.");
+      }
+
+      if (params.action === "list") {
+        const jobs = scheduler.list();
+        if (jobs.length === 0) return textResult("No scheduled jobs.");
+        const lines = jobs.map((j) => {
+          const next = j.enabled ? scheduler.getNextRun(j.id) : undefined;
+          const last = j.lastRun ? `${j.lastRun}${j.lastStatus ? ` (${j.lastStatus})` : ""}` : "never";
+          return `${j.id} — "${j.name}" [${j.enabled ? "enabled" : "paused"}] ${j.schedule} (${j.scheduleType}) | runs: ${j.runCount} | last: ${last} | next: ${next ?? "—"}`;
+        });
+        return textResult(`${jobs.length} scheduled job${jobs.length === 1 ? "" : "s"}:\n${lines.join("\n")}`);
+      }
+
+      const id = params.job_id;
+      if (!id) return textResult(`\`job_id\` is required for action "${params.action}".`);
+      const job = scheduler.list().find((j) => j.id === id);
+      if (!job) return textResult(`No scheduled job with id "${id}". Use action: "list" to see current jobs.`);
+
+      if (params.action === "cancel") {
+        scheduler.removeJob(id);
+        return textResult(`Cancelled and removed scheduled job ${id} ("${job.name}").`);
+      }
+
+      const enabled = params.action === "resume";
+      if (job.enabled === enabled) {
+        return textResult(`Job ${id} ("${job.name}") is already ${enabled ? "enabled" : "paused"}.`);
+      }
+      const updated = scheduler.updateJob(id, { enabled });
+      if (!updated) return textResult(`Failed to update job ${id}.`);
+      return textResult(
+        enabled
+          ? `Resumed job ${id} ("${job.name}"). Next run: ${scheduler.getNextRun(id) ?? "(unknown)"}.`
+          : `Paused job ${id} ("${job.name}"). Re-enable with action: "resume".`,
+      );
     },
   }));
 
