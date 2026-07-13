@@ -1405,7 +1405,15 @@ Terse command-style prompts produce shallow, generic work.
         }
       }
 
-      return textResult(output);
+      // Attach structured details so harnesses (e.g. orchestrel's orcd) can
+      // track the agent's terminal status without parsing the LLM-facing text.
+      // Consuming a result here suppresses the completion notification nudge,
+      // so this is the only structured completion signal in that path.
+      return textResult(output, buildDetails(
+        { displayName, description: record.description, subagentType: record.type },
+        record,
+        agentActivity.get(record.id),
+      ));
     },
   }));
 
