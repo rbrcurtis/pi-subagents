@@ -16,8 +16,18 @@ vi.mock("../src/worktree.js", () => ({
 
 import { runAgent } from "../src/agent-runner.js";
 
-const mockPi = {} as any;
-const mockCtx = { cwd: "/tmp" } as any;
+const parentModel = { provider: "trackable", id: "auto", name: "Auto" };
+const sonnetModel = { provider: "trackable", id: "claude-sonnet-4-6", name: "Sonnet" };
+const mockPi = { events: { emit: vi.fn() } } as any;
+const mockCtx = {
+  cwd: "/tmp",
+  model: parentModel,
+  modelRegistry: {
+    find: (provider: string, id: string) => provider === sonnetModel.provider && id === sonnetModel.id ? sonnetModel : undefined,
+    getAll: () => [parentModel, sonnetModel],
+    getAvailable: () => [parentModel, sonnetModel],
+  },
+} as any;
 
 const mockSession = () => ({ dispose: vi.fn() } as any);
 
@@ -28,6 +38,30 @@ const resolvedRun = () =>
     aborted: false,
     steered: false,
   });
+
+describe("AgentManager — runtime model policy", () => {
+  let manager: AgentManager;
+
+  afterEach(() => manager?.dispose());
+
+  it("resolves requested models before queueing so queued agents keep the selection", () => {
+    manager = new AgentManager(undefined, 1);
+    vi.mocked(runAgent).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(mockPi.events.emit).mockImplementation((_channel: string, request: { decision?: unknown }) => {
+      request.decision = { model: "trackable/claude-sonnet-4-6", source: "policy" };
+    });
+
+    manager.spawn(mockPi, mockCtx, "Explore", "blocker", { description: "blocker", isBackground: true });
+    manager.spawn(mockPi, mockCtx, "Explore", "queued", {
+      description: "queued",
+      isBackground: true,
+      requestedModel: "sonnet",
+    });
+
+    expect(vi.mocked(mockPi.events.emit)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(runAgent)).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("AgentManager — Bug 1 race condition (resultConsumed vs onComplete)", () => {
   let manager: AgentManager;

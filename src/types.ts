@@ -2,7 +2,7 @@
  * types.ts — Type definitions for the subagent system.
  */
 
-import type { ThinkingLevel } from "@earendil-works/pi-ai";
+import type { Api, Model, ThinkingLevel } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { LifetimeUsage } from "./usage.js";
 
@@ -124,6 +124,8 @@ export interface AgentRecord {
    * which only the Agent-tool path populates.
    */
   isBackground?: boolean;
+  /** Selected model object, resolved at spawn and retained for queued execution. */
+  model?: Model<Api>;
   /** Resolved spawn params, captured for UI display. Fixed at spawn time. */
   invocation?: AgentInvocation;
 }

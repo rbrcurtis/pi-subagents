@@ -9,9 +9,10 @@
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
-import type { Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
+import { selectSpawnModel } from "./model-policy.js";
 import type { AgentInvocation, AgentRecord, IsolationMode, SubagentType, ThinkingLevel } from "./types.js";
 import { addUsage } from "./usage.js";
 import { cleanupWorktree, createWorktree, pruneWorktrees, } from "./worktree.js";
@@ -56,7 +57,9 @@ interface SpawnArgs {
 
 interface SpawnOptions {
   description: string;
-  model?: Model<any>;
+  model?: Model<Api>;
+  /** Requested model input, resolved synchronously through the runtime policy. */
+  requestedModel?: string;
   maxTurns?: number;
   isolated?: boolean;
   inheritContext?: boolean;
@@ -154,14 +157,18 @@ export class AgentManager {
     // call, not minutes later at drain. Throw (not warn): programmatic callers
     // can fix and retry; the RPC layer converts throws into error envelopes.
     assertValidSpawnCwd(options.cwd);
+    // Resolve before recording or queueing so a queued agent retains this
+    // spawn-time policy choice even if policy/config changes before it runs.
+    const selected = selectSpawnModel(pi, ctx, type, options.requestedModel, options.model);
+    const effectiveOptions = { ...options, model: selected.model };
 
     const id = randomUUID().slice(0, 17);
     const abortController = new AbortController();
     const record: AgentRecord = {
       id,
       type,
-      description: options.description,
-      status: options.isBackground ? "queued" : "running",
+      description: effectiveOptions.description,
+      status: effectiveOptions.isBackground ? "queued" : "running",
       toolUses: 0,
       startedAt: Date.now(),
       abortController,
@@ -172,14 +179,15 @@ export class AgentManager {
       // declared it (e.g. a cross-extension RPC spawn). The widget's background-
       // only filter excludes only explicit `false`, so undefined agents — which
       // have no inline surface — stay visible instead of vanishing.
-      isBackground: options.isBackground,
-      invocation: options.invocation,
+      isBackground: effectiveOptions.isBackground,
+      model: selected.model,
+      invocation: effectiveOptions.invocation,
     };
     this.agents.set(id, record);
 
-    const args: SpawnArgs = { pi, ctx, type, prompt, options };
+    const args: SpawnArgs = { pi, ctx, type, prompt, options: effectiveOptions };
 
-    if (options.isBackground && !options.bypassQueue && this.runningBackground >= this.maxConcurrent) {
+    if (effectiveOptions.isBackground && !effectiveOptions.bypassQueue && this.runningBackground >= this.maxConcurrent) {
       // Queue it — will be started when a running agent completes
       this.queue.push({ id, args });
       return id;
