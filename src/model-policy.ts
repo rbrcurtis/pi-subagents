@@ -60,9 +60,12 @@ export function selectSpawnModel(
     request.requestedModel = `${explicit.provider}/${explicit.id}`;
   }
 
+  const fallback = explicit ?? fallbackModel ?? parent;
+  assertParentProvider(fallback, parent);
+
   pi.events.emit(SUBAGENT_MODEL_POLICY_CHANNEL, request);
 
-  if (!request.decision) return { model: explicit ?? fallbackModel ?? parent };
+  if (!request.decision) return { model: fallback };
   if (!isDecision(request.decision)) throw new Error("Invalid subagent policy decision");
   if ("error" in request.decision) throw new Error(request.decision.error);
 

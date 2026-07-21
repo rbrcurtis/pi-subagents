@@ -104,6 +104,17 @@ describe("selectSpawnModel", () => {
       .toThrow('This session uses provider "trackable"');
   });
 
+  it("rejects a cross-provider fallback before emitting a policy request", () => {
+    const anthropic = { id: "claude-sonnet-4-6", provider: "anthropic", name: "Sonnet" } as TestModel;
+    const { pi, ctx } = fixture("trackable", ["auto"], [anthropic]);
+    const emit = vi.fn();
+    (pi.events as unknown as PolicyEvents).emit = emit;
+
+    expect(() => selectSpawnModel(pi, ctx, "Explore", undefined, anthropic))
+      .toThrow('Subagent model provider "anthropic" does not match parent provider "trackable"');
+    expect(emit).not.toHaveBeenCalled();
+  });
+
   it("falls back to the supplied model or parent when no policy is installed", () => {
     const { pi, ctx, models } = fixture("trackable", ["auto", "claude-sonnet-4-6"]);
     expect(selectSpawnModel(pi, ctx, "Explore", undefined, models.sonnet).model).toBe(models.sonnet);
