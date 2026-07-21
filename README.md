@@ -226,7 +226,7 @@ All fields are optional — sensible defaults for everything.
 | `isolated` | `false` | Hermetic specialist mode: forces `extensions: false` + `skills: false` + drops `ext:` selectors. Only built-in tools. Distinct from `isolation: worktree` (filesystem) |
 | `enabled` | `true` | Set to `false` to disable an agent (useful for hiding a default agent per-project) |
 
-Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `max_turns`, `inherit_context`, `run_in_background`, `isolated`, or `isolation`, those values are locked for that agent. `Agent` tool parameters only fill fields the agent config leaves unspecified.
+An explicit `Agent({ model })` overrides the agent frontmatter `model`. For `thinking`, `max_turns`, `inherit_context`, `run_in_background`, `isolated`, and `isolation`, frontmatter takes precedence and `Agent` parameters fill only unspecified fields, as resolved by `resolveAgentInvocationConfig`.
 
 **Forgiving `model:` resolution.** A `model:` pin is matched against pi's model registry tolerantly, so cosmetic id variations don't silently drop the agent back to the parent's model: `.` and `-` are treated as equivalent in version numbers (`claude-haiku-4.5` ≡ `claude-haiku-4-5`), a trailing `-YYYYMMDD` date stamp is optional (`anthropic/claude-haiku-4-5-20251001` matches an undated registry id and vice-versa), and a `provider/modelId` whose named provider doesn't carry that model retries the bare id against every provider. Precedence is **exact → fuzzy under the named provider → same model under any provider → unavailable**, so an exact match always wins and dated snapshots aren't conflated. If nothing resolves, the pin can't run and the agent inherits the parent model — `/agents → Agent types` flags this case as `(unavailable, fallback: inherit)` and shows the resolved target `(→ provider/id)` when resolution lands on a different provider or version than configured. (This is distinct from [Model Scope](#model-scope) enforcement, which matches the `enabledModels` allowlist by *exact* entry.)
 
@@ -374,13 +374,14 @@ When on, each subagent spawn's effective model is validated against pi's own `en
 
 **Out-of-scope handling depends on source:**
 
-| Model source | Out-of-scope behavior |
+| Model source at the AgentManager spawn boundary | Out-of-scope behavior |
 |---|---|
-| Caller-supplied via `Agent({ model: "..." })` | Hard error returned to the orchestrator, listing allowed models |
-| Pinned in agent frontmatter | Warning toast + the pinned model runs (frontmatter is authoritative) |
-| Parent-inherited (neither set) | Warning toast + parent's model runs |
+| Explicit caller model via `Agent({ model: "..." })` | Hard error returned to the orchestrator, listing allowed models |
+| Policy-selected model | Warning toast + the policy-selected model runs |
+| Frontmatter fallback (no explicit caller model) | Warning toast + the frontmatter model runs |
+| Parent-inherited (no explicit caller model or frontmatter model) | Warning toast + the parent's model runs |
 
-**Design:** `scopeModels` is a guardrail against the orchestrator picking unexpected models at runtime, not a hard policy against user-level config. The "frontmatter is authoritative" guarantee from v0.5.1 still holds for `model:` — caller params can't override frontmatter, and frontmatter pins run even when out of scope (with a visible warning).
+**Design:** `scopeModels` is a guardrail against the orchestrator picking unexpected models at runtime, not a hard policy against user-level configuration. `AgentManager` applies it after `selectSpawnModel`: an explicit caller model takes precedence over frontmatter and fails hard when out of scope; policy-selected, frontmatter-fallback, and parent-inherited models warn and proceed.
 
 **Pattern format:** only exact `provider/modelId` entries are honored (e.g. `anthropic/claude-haiku-4-5-20251001`). Glob patterns (`*sonnet*`), bare model IDs, and `:thinking` suffixes — which pi itself supports — are silently dropped here. pi's `/scoped-models` picker writes exact entries, so the limitation is invisible if you configure scope through the UI. Hand-edited globs produce an empty allowed set (scope check becomes a no-op).
 
