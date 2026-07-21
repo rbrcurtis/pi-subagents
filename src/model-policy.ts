@@ -53,9 +53,18 @@ export function selectSpawnModel(
 
   let explicit: Model<Api> | undefined;
   if (requestedModel) {
-    const resolved = resolveModel(requestedModel, ctx.modelRegistry);
-    if (typeof resolved === "string") throw new Error(resolved);
-    explicit = resolved as Model<Api>;
+    const slash = requestedModel.indexOf("/");
+    if (slash > 0) {
+      const provider = requestedModel.slice(0, slash);
+      const modelId = requestedModel.slice(slash + 1);
+      const model = ctx.modelRegistry.find(provider, modelId);
+      if (!model) throw new Error(`Model not found: "${requestedModel}"`);
+      explicit = model as Model<Api>;
+    } else {
+      const resolved = resolveModel(requestedModel, ctx.modelRegistry);
+      if (typeof resolved === "string") throw new Error(resolved);
+      explicit = resolved as Model<Api>;
+    }
     assertParentProvider(explicit, parent);
     request.requestedModel = `${explicit.provider}/${explicit.id}`;
   }

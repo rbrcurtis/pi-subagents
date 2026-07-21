@@ -94,6 +94,37 @@ describe("selectSpawnModel", () => {
     expect(emit).not.toHaveBeenCalled();
   });
 
+  it("rejects a missing qualified model by its exact identity without emitting policy", () => {
+    const anthropic = { id: "missing", provider: "anthropic", name: "Missing" } as TestModel;
+    const { pi, ctx } = fixture("trackable", ["auto"], [anthropic]);
+    const emit = vi.fn();
+    (pi.events as unknown as PolicyEvents).emit = emit;
+
+    expect(() => selectSpawnModel(pi, ctx, "Explore", "trackable/missing"))
+      .toThrow('Model not found: "trackable/missing"');
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("rejects a qualified near-match instead of selecting a different model", () => {
+    const { pi, ctx } = fixture("trackable", ["auto", "claude-sonnet-4-6"]);
+    const emit = vi.fn();
+    (pi.events as unknown as PolicyEvents).emit = emit;
+
+    expect(() => selectSpawnModel(pi, ctx, "Explore", "trackable/claude-sonnet-4.6"))
+      .toThrow('Model not found: "trackable/claude-sonnet-4.6"');
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("rejects a qualified model missing its model identity", () => {
+    const { pi, ctx } = fixture("trackable", ["auto"]);
+    const emit = vi.fn();
+    (pi.events as unknown as PolicyEvents).emit = emit;
+
+    expect(() => selectSpawnModel(pi, ctx, "Explore", "trackable/"))
+      .toThrow('Model not found: "trackable/"');
+    expect(emit).not.toHaveBeenCalled();
+  });
+
   it("throws a policy rejection before spawn", () => {
     const { pi, ctx } = fixture("trackable", ["auto"]);
     installPolicy(pi.events as unknown as PolicyEvents, (req) => {
