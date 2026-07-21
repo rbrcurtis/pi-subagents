@@ -44,22 +44,37 @@ describe("AgentManager — runtime model policy", () => {
 
   afterEach(() => manager?.dispose());
 
-  it("resolves requested models before queueing so queued agents keep the selection", () => {
+  it("runs a queued agent with its spawn-time policy selection", async () => {
     manager = new AgentManager(undefined, 1);
-    vi.mocked(runAgent).mockImplementation(() => new Promise(() => {}));
+    let finishBlocker!: () => void;
+    vi.mocked(runAgent).mockImplementationOnce(() => new Promise((resolve) => {
+      finishBlocker = () => resolve({
+        responseText: "done",
+        session: mockSession(),
+        aborted: false,
+        steered: false,
+      });
+    }));
+    resolvedRun();
     vi.mocked(mockPi.events.emit).mockImplementation((_channel: string, request: { decision?: unknown }) => {
       request.decision = { model: "trackable/claude-sonnet-4-6", source: "policy" };
     });
 
-    manager.spawn(mockPi, mockCtx, "Explore", "blocker", { description: "blocker", isBackground: true });
-    manager.spawn(mockPi, mockCtx, "Explore", "queued", {
+    const blockerId = manager.spawn(mockPi, mockCtx, "Explore", "blocker", { description: "blocker", isBackground: true });
+    const queuedId = manager.spawn(mockPi, mockCtx, "Explore", "queued", {
       description: "queued",
       isBackground: true,
       requestedModel: "sonnet",
     });
 
     expect(vi.mocked(mockPi.events.emit)).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(runAgent)).toHaveBeenCalledTimes(1);
+    expect(manager.getRecord(queuedId)?.status).toBe("queued");
+
+    finishBlocker();
+    await manager.getRecord(blockerId)?.promise;
+    await manager.getRecord(queuedId)?.promise;
+
+    expect(vi.mocked(runAgent).mock.calls[1]?.[3].model).toBe(sonnetModel);
   });
 });
 

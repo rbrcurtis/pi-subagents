@@ -27,6 +27,14 @@ function isDecision(value: unknown): value is SubagentModelPolicyDecision {
   return (hasModel && hasSource && !hasError) || (hasError && !hasModel && !hasSource);
 }
 
+function assertParentProvider(model: Model<Api>, parent: Model<Api>): void {
+  if (model.provider !== parent.provider) {
+    throw new Error(
+      `Subagent model provider "${model.provider}" does not match parent provider "${parent.provider}"`,
+    );
+  }
+}
+
 export function selectSpawnModel(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
@@ -46,16 +54,9 @@ export function selectSpawnModel(
   let explicit: Model<Api> | undefined;
   if (requestedModel) {
     const resolved = resolveModel(requestedModel, ctx.modelRegistry);
-    if (typeof resolved === "string") {
-      request.requestedModel = requestedModel;
-      pi.events.emit(SUBAGENT_MODEL_POLICY_CHANNEL, request);
-      if (request.decision) {
-        if (!isDecision(request.decision)) throw new Error("Invalid subagent policy decision");
-        if ("error" in request.decision) throw new Error(request.decision.error);
-      }
-      throw new Error(resolved);
-    }
+    if (typeof resolved === "string") throw new Error(resolved);
     explicit = resolved as Model<Api>;
+    assertParentProvider(explicit, parent);
     request.requestedModel = `${explicit.provider}/${explicit.id}`;
   }
 
@@ -72,5 +73,7 @@ export function selectSpawnModel(
   if (!modelId) throw new Error(`Invalid subagent policy model: "${request.decision.model}"`);
   const model = ctx.modelRegistry.find(provider, modelId);
   if (!model) throw new Error(`Subagent policy model not found: "${request.decision.model}"`);
-  return { model: model as Model<Api>, source: request.decision.source };
+  const selected = model as Model<Api>;
+  assertParentProvider(selected, parent);
+  return { model: selected, source: request.decision.source };
 }

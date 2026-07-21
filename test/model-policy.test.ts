@@ -1,6 +1,6 @@
 import type { Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   SUBAGENT_MODEL_POLICY_CHANNEL,
   type SubagentModelPolicyRequest,
@@ -13,8 +13,11 @@ type PolicyEvents = {
 
 type TestModel = Model<unknown> & { id: string; provider: string; name: string };
 
-function fixture(provider: string, ids: string[]) {
-  const all = ids.map((id) => ({ id, provider, name: id } as TestModel));
+function fixture(provider: string, ids: string[], additional: TestModel[] = []) {
+  const all = [
+    ...ids.map((id) => ({ id, provider, name: id } as TestModel)),
+    ...additional,
+  ];
   const models = {
     auto: all.find((model) => model.id === "auto")!,
     sonnet: all.find((model) => model.id.includes("sonnet"))!,
@@ -59,13 +62,45 @@ describe("selectSpawnModel", () => {
     expect(selectSpawnModel(pi, ctx, "Explore").model).toBe(models.opus);
   });
 
+  it("rejects an explicit model from another provider without policy", () => {
+    const anthropic = { id: "claude-sonnet-4-6", provider: "anthropic", name: "Sonnet" } as TestModel;
+    const { pi, ctx } = fixture("trackable", ["auto"], [anthropic]);
+    const emit = vi.fn();
+    (pi.events as unknown as PolicyEvents).emit = emit;
+
+    expect(() => selectSpawnModel(pi, ctx, "Explore", "anthropic/claude-sonnet-4-6"))
+      .toThrow('Subagent model provider "anthropic" does not match parent provider "trackable"');
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("rejects a policy-selected model from another provider", () => {
+    const anthropic = { id: "claude-sonnet-4-6", provider: "anthropic", name: "Sonnet" } as TestModel;
+    const { pi, ctx } = fixture("trackable", ["auto"], [anthropic]);
+    installPolicy(pi.events as unknown as PolicyEvents, (req) => {
+      req.decision = { model: "anthropic/claude-sonnet-4-6", source: "policy" };
+    });
+
+    expect(() => selectSpawnModel(pi, ctx, "Explore"))
+      .toThrow('Subagent model provider "anthropic" does not match parent provider "trackable"');
+  });
+
+  it("does not emit policy request when an explicit model cannot be resolved", () => {
+    const { pi, ctx } = fixture("trackable", ["auto"]);
+    const emit = vi.fn();
+    (pi.events as unknown as PolicyEvents).emit = emit;
+
+    expect(() => selectSpawnModel(pi, ctx, "Explore", "missing"))
+      .toThrow('Model not found: "missing"');
+    expect(emit).not.toHaveBeenCalled();
+  });
+
   it("throws a policy rejection before spawn", () => {
     const { pi, ctx } = fixture("trackable", ["auto"]);
     installPolicy(pi.events as unknown as PolicyEvents, (req) => {
-      req.decision = { error: 'Subagent model "anthropic/claude-haiku-4-5" is not allowed. This session uses provider "trackable".' };
+      req.decision = { error: 'Subagent model "trackable/auto" is not allowed. This session uses provider "trackable".' };
     });
 
-    expect(() => selectSpawnModel(pi, ctx, "Explore", "anthropic/claude-haiku-4-5"))
+    expect(() => selectSpawnModel(pi, ctx, "Explore", "auto"))
       .toThrow('This session uses provider "trackable"');
   });
 
