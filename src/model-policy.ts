@@ -18,6 +18,14 @@ export type SubagentModelPolicyDecision =
   | { model: string; source: string }
   | { error: string };
 
+/** Why selectSpawnModel chose its effective model. */
+export type SpawnModelSource = "explicit" | "policy" | "fallback" | "parent";
+
+export interface SpawnModelSelection {
+  model: Model<Api>;
+  source: SpawnModelSource;
+}
+
 function isDecision(value: unknown): value is SubagentModelPolicyDecision {
   if (!value || typeof value !== "object") return false;
   const decision = value as Record<string, unknown>;
@@ -41,7 +49,7 @@ export function selectSpawnModel(
   agentType: string,
   requestedModel?: string,
   fallbackModel?: Model<Api>,
-): { model: Model<Api>; source?: string } {
+): SpawnModelSelection {
   const parent = ctx.model;
   if (!parent) throw new Error("Cannot select a subagent model without a parent model");
 
@@ -70,11 +78,16 @@ export function selectSpawnModel(
   }
 
   const fallback = explicit ?? fallbackModel ?? parent;
+  const fallbackSource: SpawnModelSource = explicit
+    ? "explicit"
+    : fallbackModel
+      ? "fallback"
+      : "parent";
   assertParentProvider(fallback, parent);
 
   pi.events.emit(SUBAGENT_MODEL_POLICY_CHANNEL, request);
 
-  if (!request.decision) return { model: fallback };
+  if (!request.decision) return { model: fallback, source: fallbackSource };
   if (!isDecision(request.decision)) throw new Error("Invalid subagent policy decision");
   if ("error" in request.decision) throw new Error(request.decision.error);
 
@@ -87,5 +100,5 @@ export function selectSpawnModel(
   if (!model) throw new Error(`Subagent policy model not found: "${request.decision.model}"`);
   const selected = model as Model<Api>;
   assertParentProvider(selected, parent);
-  return { model: selected, source: request.decision.source };
+  return { model: selected, source: explicit ? "explicit" : "policy" };
 }

@@ -34,10 +34,10 @@ export interface SubagentsSettings {
    *
    * scopeModels guards against runtime LLM choices, not user-level config.
    * Out-of-scope handling reflects this:
-   *   - Caller-supplied via `Agent({ model: "..." })` (only when frontmatter
-   *     has no `model:`, since frontmatter is authoritative): hard error
-   *     returned to the orchestrator, listing the allowed models. The LLM
-   *     made an explicit out-of-scope choice and gets explicit feedback.
+   *   - Caller-supplied via `Agent({ model: "..." })`: hard error returned
+   *     to the orchestrator, listing the allowed models. This explicit Agent
+   *     parameter wins over frontmatter under current model precedence, so the
+   *     LLM made an explicit out-of-scope choice and gets explicit feedback.
    *   - Frontmatter-pinned: warning toast + the pinned model runs. The
    *     agent's author/installer chose this; trust it.
    *   - Parent-inherited (neither caller nor frontmatter sets a model):

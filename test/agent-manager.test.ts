@@ -42,7 +42,46 @@ const resolvedRun = () =>
 describe("AgentManager — runtime model policy", () => {
   let manager: AgentManager;
 
-  afterEach(() => manager?.dispose());
+  afterEach(() => {
+    manager?.dispose();
+    vi.clearAllMocks();
+  });
+
+  it("rejects an explicit same-provider model outside enabledModels before spawning", () => {
+    manager = new AgentManager(undefined, 1, undefined, undefined, (selected) => {
+      if (selected.source === "explicit" && selected.model === sonnetModel) {
+        throw new Error('Model not in scope: "sonnet"');
+      }
+    });
+
+    expect(() => manager.spawn(mockPi, mockCtx, "Explore", "blocked", {
+      description: "blocked",
+      requestedModel: "sonnet",
+    })).toThrow('Model not in scope: "sonnet"');
+    expect(runAgent).not.toHaveBeenCalled();
+  });
+
+  it("permits out-of-scope policy, frontmatter fallback, and parent models after manager validation", async () => {
+    const warnings: string[] = [];
+    manager = new AgentManager(undefined, 1, undefined, undefined, (selected) => {
+      warnings.push(selected.source);
+    });
+    resolvedRun();
+    resolvedRun();
+    resolvedRun();
+    vi.mocked(mockPi.events.emit).mockImplementation((_channel: string, request: { decision?: unknown }) => {
+      request.decision = { model: "trackable/claude-sonnet-4-6", source: "policy" };
+    });
+
+    const policy = manager.spawn(mockPi, mockCtx, "Explore", "policy", { description: "policy" });
+    vi.mocked(mockPi.events.emit).mockImplementation(() => {});
+    const fallback = manager.spawn(mockPi, mockCtx, "Explore", "fallback", { description: "fallback", model: sonnetModel });
+    const parent = manager.spawn(mockPi, mockCtx, "Explore", "parent", { description: "parent" });
+    await Promise.all([policy, fallback, parent].map(id => manager.getRecord(id)!.promise));
+
+    expect(warnings).toEqual(["policy", "fallback", "parent"]);
+    expect(vi.mocked(runAgent).mock.calls.map(call => call[3].model)).toEqual([sonnetModel, sonnetModel, parentModel]);
+  });
 
   it("runs a queued agent with its spawn-time policy selection", async () => {
     manager = new AgentManager(undefined, 1);

@@ -434,6 +434,27 @@ export default function (pi: ExtensionAPI) {
       tokensBefore: info.tokensBefore,
       compactionCount: record.compactionCount,
     });
+  }, (selected, spawnCtx, requestedModel) => {
+    if (!isScopeModelsEnabled()) return;
+    const allowed = resolveEnabledModels(
+      readEnabledModels(spawnCtx.cwd),
+      spawnCtx.modelRegistry,
+      spawnCtx.cwd,
+    );
+    if (!allowed || isModelInScope(selected.model, allowed)) return;
+
+    if (selected.source === "explicit") {
+      const list = [...allowed].sort().map(model => `  ${model}`).join("\n");
+      throw new Error(
+        `Model not in scope: "${requestedModel ?? `${selected.model.provider}/${selected.model.id}`}".\n\n` +
+        `Allowed models (from enabledModels):\n${list}`,
+      );
+    }
+
+    spawnCtx.ui.notify(
+      `Agent using out-of-scope ${selected.source} model "${selected.model.provider}/${selected.model.id}"`,
+      "warning",
+    );
   });
 
   // Expose manager via Symbol.for() global registry for cross-package access.
@@ -993,35 +1014,6 @@ Terse command-style prompts produce shallow, generic work.
       if (resolvedConfig.modelInput && !resolvedConfig.modelFromParams) {
         const resolved = resolveModel(resolvedConfig.modelInput, ctx.modelRegistry);
         if (typeof resolved !== "string") model = resolved;
-      }
-
-      // Scope validation: the effective resolved model is checked against the
-      // user's enabledModels list (read in `enabled-models.ts`).
-      //
-      // Design: scopeModels guards against *runtime* LLM choices, not user-level config.
-      //   - Caller-supplied out-of-scope → hard error (the orchestrator made an explicit
-      //     out-of-scope choice; surface it so it picks differently).
-      //   - Frontmatter-pinned or parent-inherited out-of-scope → warn but proceed (the
-      //     user authored/installed this agent or chose the parent's model; trust it).
-      // See SubagentsSettings.scopeModels docstring for the full policy.
-      if (isScopeModelsEnabled() && model) {
-        const allowed = resolveEnabledModels(readEnabledModels(ctx.cwd), ctx.modelRegistry, ctx.cwd);
-        if (allowed && !isModelInScope(model, allowed)) {
-          if (resolvedConfig.modelFromParams) {
-            const list = [...allowed].sort().map(m => `  ${m}`).join("\n");
-            return textResult(
-              `Model not in scope: "${resolvedConfig.modelInput}".\n\n` +
-              `Allowed models (from enabledModels):\n${list}`,
-            );
-          }
-          // Frontmatter-pinned or parent-inherited: warn + proceed.
-          const agentLabel = customConfig?.displayName ?? subagentType;
-          const modelLabel = resolvedConfig.modelInput ?? `${model.provider}/${model.id}`;
-          ctx.ui.notify(
-            `Agent "${agentLabel}" using out-of-scope model "${modelLabel}"`,
-            "warning",
-          );
-        }
       }
 
       const thinking = resolvedConfig.thinking;

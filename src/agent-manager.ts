@@ -12,7 +12,7 @@ import { isAbsolute } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
-import { selectSpawnModel } from "./model-policy.js";
+import { type SpawnModelSelection, selectSpawnModel } from "./model-policy.js";
 import type { AgentInvocation, AgentRecord, IsolationMode, SubagentType, ThinkingLevel } from "./types.js";
 import { addUsage } from "./usage.js";
 import { cleanupWorktree, createWorktree, pruneWorktrees, } from "./worktree.js";
@@ -20,6 +20,7 @@ import { cleanupWorktree, createWorktree, pruneWorktrees, } from "./worktree.js"
 export type OnAgentComplete = (record: AgentRecord) => void;
 export type OnAgentStart = (record: AgentRecord) => void;
 export type OnAgentCompact = (record: AgentRecord, info: CompactionInfo) => void;
+export type OnSpawnModelSelected = (selection: SpawnModelSelection, ctx: ExtensionContext, requestedModel?: string) => void;
 export type CompactionInfo = { reason: "manual" | "threshold" | "overflow"; tokensBefore: number };
 
 /** Default max concurrent background agents. */
@@ -106,6 +107,7 @@ export class AgentManager {
   private onComplete?: OnAgentComplete;
   private onStart?: OnAgentStart;
   private onCompact?: OnAgentCompact;
+  private onSpawnModelSelected?: OnSpawnModelSelected;
   private maxConcurrent: number;
   /** Base repos worktrees were created from — so dispose() can prune them all,
    *  not just the parent repo (caller-supplied cwd can target other repos). */
@@ -121,10 +123,12 @@ export class AgentManager {
     maxConcurrent = DEFAULT_MAX_CONCURRENT,
     onStart?: OnAgentStart,
     onCompact?: OnAgentCompact,
+    onSpawnModelSelected?: OnSpawnModelSelected,
   ) {
     this.onComplete = onComplete;
     this.onStart = onStart;
     this.onCompact = onCompact;
+    this.onSpawnModelSelected = onSpawnModelSelected;
     this.maxConcurrent = maxConcurrent;
     // Cleanup completed agents after 10 minutes (but keep sessions for resume)
     this.cleanupInterval = setInterval(() => this.cleanup(), 60_000);
@@ -160,6 +164,7 @@ export class AgentManager {
     // Resolve before recording or queueing so a queued agent retains this
     // spawn-time policy choice even if policy/config changes before it runs.
     const selected = selectSpawnModel(pi, ctx, type, options.requestedModel, options.model);
+    this.onSpawnModelSelected?.(selected, ctx, options.requestedModel);
     const effectiveOptions = { ...options, model: selected.model };
 
     const id = randomUUID().slice(0, 17);
