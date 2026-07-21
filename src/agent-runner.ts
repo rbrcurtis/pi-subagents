@@ -279,6 +279,22 @@ function getLastAssistantText(session: AgentSession): string {
 }
 
 /**
+ * Model/API failures end the turn with stopReason "error" and no text. Without
+ * this check the runner would report a successful empty run ("No output"),
+ * hiding auth/permission/provider errors from both the caller and the user.
+ */
+function getTerminalModelError(session: AgentSession): string | undefined {
+  for (let i = session.messages.length - 1; i >= 0; i--) {
+    const msg = session.messages[i];
+    if (msg.role !== "assistant") continue;
+    const m = msg as { stopReason?: string; errorMessage?: string };
+    if (m.stopReason === "error") return m.errorMessage ?? "unknown model error";
+    return undefined; // only the latest assistant message reflects the final state
+  }
+  return undefined;
+}
+
+/**
  * Wire an AbortSignal to abort a session.
  * Returns a cleanup function to remove the listener.
  */
@@ -674,6 +690,10 @@ export async function runAgent(
   }
 
   const responseText = collector.getText().trim() || getLastAssistantText(session);
+  if (!responseText) {
+    const modelError = getTerminalModelError(session);
+    if (modelError) throw new Error(modelError);
+  }
   return { responseText, session, aborted, steered: softLimitReached };
 }
 
@@ -719,7 +739,12 @@ export async function resumeAgent(
     cleanupAbort();
   }
 
-  return collector.getText().trim() || getLastAssistantText(session);
+  const text = collector.getText().trim() || getLastAssistantText(session);
+  if (!text) {
+    const modelError = getTerminalModelError(session);
+    if (modelError) throw new Error(modelError);
+  }
+  return text;
 }
 
 /**
