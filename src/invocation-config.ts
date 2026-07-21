@@ -23,9 +23,10 @@ export function resolveAgentInvocationConfig(
   isolated: boolean;
   isolation?: IsolationMode;
 } {
+  const explicitModel = params.model;
   return {
-    modelInput: agentConfig?.model ?? params.model,
-    modelFromParams: agentConfig?.model == null && params.model != null,
+    modelInput: explicitModel ?? agentConfig?.model,
+    modelFromParams: explicitModel != null,
     thinking: (agentConfig?.thinking ?? params.thinking) as ThinkingLevel | undefined,
     maxTurns: agentConfig?.maxTurns ?? params.max_turns,
     inheritContext: agentConfig?.inheritContext ?? params.inherit_context ?? false,

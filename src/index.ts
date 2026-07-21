@@ -987,16 +987,12 @@ Terse command-style prompts produce shallow, generic work.
 
       const resolvedConfig = resolveAgentInvocationConfig(customConfig, params);
 
-      // Resolve model from agent config first; tool-call params only fill gaps.
-      let model = ctx.model;
-      if (resolvedConfig.modelInput) {
+      // Explicit tool model text is selected by AgentManager's runtime policy.
+      // A frontmatter model remains a best-effort fallback for hosts without one.
+      let model: typeof ctx.model;
+      if (resolvedConfig.modelInput && !resolvedConfig.modelFromParams) {
         const resolved = resolveModel(resolvedConfig.modelInput, ctx.modelRegistry);
-        if (typeof resolved === "string") {
-          if (resolvedConfig.modelFromParams) return textResult(resolved);
-          // config-specified: silent fallback to parent
-        } else {
-          model = resolved;
-        }
+        if (typeof resolved !== "string") model = resolved;
       }
 
       // Scope validation: the effective resolved model is checked against the
@@ -1034,11 +1030,14 @@ Terse command-style prompts produce shallow, generic work.
       const isolated = resolvedConfig.isolated;
       const isolation = resolvedConfig.isolation;
 
-      const parentModelId = ctx.model?.id;
-      const effectiveModelId = model?.id;
-      const modelName = effectiveModelId && effectiveModelId !== parentModelId
-        ? (model?.name ?? effectiveModelId).replace(/^Claude\s+/i, "").toLowerCase()
-        : undefined;
+      const selectedModelName = (selectedModel: typeof ctx.model) => {
+        const parentModelId = ctx.model?.id;
+        const effectiveModelId = selectedModel?.id;
+        return effectiveModelId && effectiveModelId !== parentModelId
+          ? (selectedModel?.name ?? effectiveModelId).replace(/^Claude\s+/i, "").toLowerCase()
+          : undefined;
+      };
+      let modelName = selectedModelName(model);
       const effectiveMaxTurns = normalizeMaxTurns(resolvedConfig.maxTurns ?? getDefaultMaxTurns());
       const agentInvocation: AgentInvocation = {
         modelName,
@@ -1055,12 +1054,22 @@ Terse command-style prompts produce shallow, generic work.
       const modeLabel = getPromptModeLabel(subagentType);
       const { tags: invocationTags } = buildInvocationTags(agentInvocation);
       const agentTags = modeLabel ? [modeLabel, ...invocationTags] : invocationTags;
-      const detailBase = {
+      let detailBase = {
         displayName,
         description: params.description,
         subagentType,
         modelName,
         tags: agentTags.length > 0 ? agentTags : undefined,
+      };
+      const applySelectedModel = (selectedModel: typeof ctx.model) => {
+        modelName = selectedModelName(selectedModel);
+        agentInvocation.modelName = modelName;
+        const { tags } = buildInvocationTags(agentInvocation);
+        detailBase = {
+          ...detailBase,
+          modelName,
+          tags: modeLabel ? [modeLabel, ...tags] : tags.length > 0 ? tags : undefined,
+        };
       };
 
       // ---- Schedule: register a job, don't spawn now ----
@@ -1144,6 +1153,7 @@ Terse command-style prompts produce shallow, generic work.
           id = manager.spawn(pi, ctx, subagentType, params.prompt, {
             description: params.description,
             model,
+            requestedModel: resolvedConfig.modelFromParams ? resolvedConfig.modelInput : undefined,
             maxTurns: effectiveMaxTurns,
             isolated,
             inheritContext,
@@ -1193,6 +1203,7 @@ Terse command-style prompts produce shallow, generic work.
           isBackground: true,
         });
 
+        applySelectedModel(record?.model);
         const isQueued = record?.status === "queued";
         return textResult(
           `Agent ${isQueued ? "queued" : "started"} in background.\n` +
@@ -1271,6 +1282,7 @@ Terse command-style prompts produce shallow, generic work.
         const fgResult = await manager.spawnAndWait(pi, ctx, subagentType, params.prompt, {
           description: params.description,
           model,
+          requestedModel: resolvedConfig.modelFromParams ? resolvedConfig.modelInput : undefined,
           maxTurns: effectiveMaxTurns,
           isolated,
           inheritContext,
@@ -1289,6 +1301,7 @@ Terse command-style prompts produce shallow, generic work.
           }
         });
         record = fgResult.record;
+        applySelectedModel(record.model);
       } catch (err) {
         clearInterval(spinnerInterval);
         return textResult(err instanceof Error ? err.message : String(err));

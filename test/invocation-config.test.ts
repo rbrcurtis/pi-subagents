@@ -41,14 +41,24 @@ describe("resolveAgentInvocationConfig", () => {
       },
     );
 
-    expect(resolved.modelInput).toBe("provider/config-model");
-    expect(resolved.modelFromParams).toBe(false);
+    expect(resolved.modelInput).toBe("provider/param-model");
+    expect(resolved.modelFromParams).toBe(true);
     expect(resolved.thinking).toBe("high");
     expect(resolved.maxTurns).toBe(42);
     expect(resolved.inheritContext).toBe(false);
     expect(resolved.runInBackground).toBe(false);
     expect(resolved.isolated).toBe(false);
     expect(resolved.isolation).toBe("worktree");
+  });
+
+  it("lets the explicit Agent model parameter outrank agent config", () => {
+    const resolved = resolveAgentInvocationConfig(
+      { model: "provider/config-model" } as AgentConfig,
+      { model: "provider/explicit-model" },
+    );
+
+    expect(resolved.modelInput).toBe("provider/explicit-model");
+    expect(resolved.modelFromParams).toBe(true);
   });
 
   it("uses tool-call params when no agent config is available", () => {

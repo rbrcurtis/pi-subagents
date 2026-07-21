@@ -234,37 +234,24 @@ describe("cross-extension RPC", () => {
     });
   });
 
-  // --- model override resolution (regression for cross-extension callers
-  //     that forward a serializable string instead of a Model object) ---
+  // --- model override routing ---
 
   describe("spawn RPC model override", () => {
     const fakeModel = { id: "gpt-5.5", provider: "openai-codex", name: "GPT 5.5" };
-    const registry = {
-      find: (provider: string, id: string) =>
-        provider === fakeModel.provider && id === fakeModel.id ? fakeModel : null,
-      getAll: () => [fakeModel],
-      getAvailable: () => [fakeModel],
-    };
 
-    beforeEach(() => {
-      ctx = { session: true, modelRegistry: registry };
-      deps = { events, pi: { events }, getCtx: () => ctx, manager };
-    });
-
-    it("resolves a string model to a Model instance before manager.spawn", async () => {
+    it("passes a string model unchanged to the manager policy", async () => {
       registerRpcHandlers(deps);
       const reply = vi.fn();
       events.on("subagents:rpc:spawn:reply:req-m1", reply);
       events.emit("subagents:rpc:spawn", {
-        requestId: "req-m1", type: "general-purpose", prompt: "x",
-        options: { model: "openai-codex/gpt-5.5" },
+        requestId: "req-m1", type: "Explore", prompt: "x",
+        options: { model: "trackable/claude-opus-4-6" },
       });
 
       await vi.waitFor(() => expect(reply).toHaveBeenCalled());
-      expect(reply).toHaveBeenCalledWith({ success: true, data: { id: "agent-42" } });
       expect(manager.spawn).toHaveBeenCalledWith(
-        deps.pi, ctx, "general-purpose", "x",
-        { model: fakeModel },
+        deps.pi, ctx, "Explore", "x",
+        expect.objectContaining({ requestedModel: "trackable/claude-opus-4-6", model: undefined }),
       );
     });
 
@@ -282,39 +269,6 @@ describe("cross-extension RPC", () => {
         deps.pi, ctx, "general-purpose", "x",
         { model: fakeModel },
       );
-    });
-
-    it("surfaces a clear error when the model string can't be resolved", async () => {
-      registerRpcHandlers(deps);
-      const reply = vi.fn();
-      events.on("subagents:rpc:spawn:reply:req-m3", reply);
-      events.emit("subagents:rpc:spawn", {
-        requestId: "req-m3", type: "general-purpose", prompt: "x",
-        options: { model: "nope/does-not-exist" },
-      });
-
-      await vi.waitFor(() => expect(reply).toHaveBeenCalled());
-      const call = (reply as ReturnType<typeof vi.fn>).mock.calls[0][0];
-      expect(call.success).toBe(false);
-      expect(call.error).toMatch(/Model not found/);
-      expect(manager.spawn).not.toHaveBeenCalled();
-    });
-
-    it("errors when ctx has no modelRegistry but a string model is given", async () => {
-      ctx = { session: true }; // no modelRegistry
-      registerRpcHandlers(deps);
-      const reply = vi.fn();
-      events.on("subagents:rpc:spawn:reply:req-m4", reply);
-      events.emit("subagents:rpc:spawn", {
-        requestId: "req-m4", type: "general-purpose", prompt: "x",
-        options: { model: "openai-codex/gpt-5.5" },
-      });
-
-      await vi.waitFor(() => expect(reply).toHaveBeenCalled());
-      const call = (reply as ReturnType<typeof vi.fn>).mock.calls[0][0];
-      expect(call.success).toBe(false);
-      expect(call.error).toMatch(/modelRegistry is unavailable/);
-      expect(manager.spawn).not.toHaveBeenCalled();
     });
   });
 });

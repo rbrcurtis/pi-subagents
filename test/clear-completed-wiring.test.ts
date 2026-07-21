@@ -48,12 +48,14 @@ function makePi() {
 }
 
 function ctx() {
+  const model = { provider: "test", id: "parent", name: "Parent" };
   return {
     hasUI: false,
     ui: { setStatus: vi.fn(), setWidget: vi.fn(), notify: vi.fn() },
     cwd: process.cwd(),
-    model: undefined,
-    modelRegistry: { find: vi.fn(), getAvailable: vi.fn(() => []) },
+    model,
+    modelRegistry: { find: vi.fn((provider: string, id: string) =>
+      provider === model.provider && id === model.id ? model : undefined), getAvailable: vi.fn(() => [model]) },
     sessionManager: { getSessionId: vi.fn(() => "s1"), getBranch: vi.fn(() => []) },
     getSystemPrompt: vi.fn(() => "parent"),
   } as any;

@@ -44,6 +44,7 @@ function makePi() {
 }
 
 function makeHeadlessCtx() {
+  const model = { provider: "test", id: "parent", name: "Parent" };
   return {
     hasUI: false,
     ui: {
@@ -51,10 +52,11 @@ function makeHeadlessCtx() {
       setWidget: vi.fn(),
     },
     cwd: "/tmp",
-    model: undefined,
+    model,
     modelRegistry: {
-      find: vi.fn(),
-      getAvailable: vi.fn(() => []),
+      find: vi.fn((provider: string, id: string) =>
+        provider === model.provider && id === model.id ? model : undefined),
+      getAvailable: vi.fn(() => [model]),
     },
     sessionManager: {
       getSessionId: vi.fn(() => "session-1"),

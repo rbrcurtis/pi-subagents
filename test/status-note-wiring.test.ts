@@ -11,6 +11,7 @@ vi.mock("../src/agent-runner.js", async () => {
   return { ...actual, runAgent: vi.fn() };
 });
 
+import { AgentManager } from "../src/agent-manager.js";
 import { runAgent } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
 
@@ -36,12 +37,14 @@ function makePi() {
 }
 
 function ctx() {
+  const model = { provider: "trackable", id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" };
   return {
     hasUI: false,
     ui: { setStatus: vi.fn(), setWidget: vi.fn(), notify: vi.fn() },
     cwd: "/tmp",
-    model: undefined,
-    modelRegistry: { find: vi.fn(), getAvailable: vi.fn(() => []) },
+    model,
+    modelRegistry: { find: vi.fn((provider: string, id: string) =>
+      provider === model.provider && id === model.id ? model : undefined), getAvailable: vi.fn(() => [model]) },
     sessionManager: { getSessionId: vi.fn(() => "s1"), getBranch: vi.fn(() => []) },
     getSystemPrompt: vi.fn(() => "parent"),
   } as any;
@@ -51,6 +54,38 @@ const textOf = (r: any): string => r.content[0].text;
 
 describe("status note reaches the parent through the real handlers", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it("passes an explicit Agent model to AgentManager policy", async () => {
+    vi.mocked(runAgent).mockResolvedValue({
+      responseText: "done",
+      session: { dispose: vi.fn() } as any,
+      aborted: false,
+      steered: false,
+    });
+    const spawnAndWait = vi.spyOn(AgentManager.prototype, "spawnAndWait");
+    const { pi, tools } = makePi();
+    subagentsExtension(pi);
+
+    await tools.get("Agent").execute(
+      "tc-model",
+      {
+        prompt: "go",
+        description: "d",
+        subagent_type: "general-purpose",
+        model: "trackable/claude-sonnet-4-6",
+      },
+      undefined, undefined, ctx(),
+    );
+
+    expect(spawnAndWait).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "general-purpose",
+      "go",
+      expect.objectContaining({ requestedModel: "trackable/claude-sonnet-4-6" }),
+      expect.anything(),
+    );
+  });
 
   it("foreground turn-limit abort → the Agent result flags an incomplete outcome", async () => {
     vi.mocked(runAgent).mockResolvedValue({

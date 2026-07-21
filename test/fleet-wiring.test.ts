@@ -50,12 +50,14 @@ function uiCtx() {
 }
 
 function ctxWith(ui: ReturnType<typeof uiCtx>) {
+  const model = { provider: "test", id: "parent", name: "Parent" };
   return {
     hasUI: true,
     ui,
     cwd: process.cwd(),
-    model: undefined,
-    modelRegistry: { find: vi.fn(), getAvailable: vi.fn(() => []) },
+    model,
+    modelRegistry: { find: vi.fn((provider: string, id: string) =>
+      provider === model.provider && id === model.id ? model : undefined), getAvailable: vi.fn(() => [model]) },
     sessionManager: { getSessionId: () => "s1", getBranch: () => [] },
     getSystemPrompt: () => "parent",
   } as any;

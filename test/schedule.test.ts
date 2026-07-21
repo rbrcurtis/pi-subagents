@@ -281,17 +281,24 @@ describe("SubagentScheduler — fire path", () => {
     expect(manager.spawn).toHaveBeenCalledTimes(1);
   });
 
-  it("fire passes bypassQueue: true to manager.spawn", () => {
+  it("fires through the manager policy with the requested model text", () => {
     scheduler.addJob({
       name: "every-1s", description: "x", schedule: "1s",
-      subagent_type: "general-purpose", prompt: "x",
+      subagent_type: "Explore", prompt: "x", model: "trackable/claude-opus-4-6",
     });
 
     vi.advanceTimersByTime(1_000);
-    expect(manager.spawn).toHaveBeenCalledTimes(1);
-    const optsArg = manager.spawn.mock.calls[0][4];
-    expect(optsArg.bypassQueue).toBe(true);
-    expect(optsArg.isBackground).toBe(true);
+    expect(manager.spawn).toHaveBeenCalledWith(
+      pi,
+      ctx,
+      "Explore",
+      "x",
+      expect.objectContaining({
+        requestedModel: "trackable/claude-opus-4-6",
+        bypassQueue: true,
+        isBackground: true,
+      }),
+    );
   });
 
   it("disabled jobs do not fire", () => {
